@@ -1,94 +1,82 @@
 package com.bajaj_test.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.*;
+import com.bajaj_test.client.HealthApiClient;
+import com.bajaj_test.config.AppConfigProperties;
+import com.bajaj_test.dto.WebhookRequest;
+import com.bajaj_test.dto.WebhookResponse;
+import com.bajaj_test.repository.EmployeeRepository;
+import com.bajaj_test.repository.PaymentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import lombok.extern.slf4j.Slf4j;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @Service
-@Slf4j
 public class WebhookService {
 
-    @Autowired
-    private RestTemplate restTemplate;
+    private static final Logger logger = LoggerFactory.getLogger(WebhookService.class);
 
-    @Autowired
-    private SQLProblemService sqlProblemService;
+    private final HealthApiClient apiClient;
+    private final AppConfigProperties config;
+    private final SQLProblemService sqlProblemService;
 
-    public void processWebhook() {
+    public WebhookService(HealthApiClient apiClient, AppConfigProperties config, SQLProblemService sqlProblemService) {
+        this.apiClient = apiClient;
+        this.config = config;
+        this.sqlProblemService = sqlProblemService;
+    }
+
+    public void executeChallenge() {
         try {
-            String regNo = "358";
-            Map<String, String> webhookData = generateWebhook(regNo);
-            String webhookUrl = webhookData.get("webhookUrl");
+            logger.info("Starting challenge for user: {}", config.getUser().getName());
+            WebhookRequest request = new WebhookRequest(config.getUser().getName(), config.getUser().getRegNo(), config.getUser().getEmail());
 
-            String sqlQuery;
-            int lastTwoDigits = Integer.parseInt(regNo.substring(regNo.length() - 2));
+            WebhookResponse response = apiClient.generateWebhook(request);
 
-            if (lastTwoDigits % 2 != 0) {
-                log.info("Registration number {} is odd. Solving Question 1.", regNo);
-                sqlQuery = sqlProblemService.solveQuestion1();
-            } else {
-                log.info("Registration number {} is even. Solving Question 2.", regNo);
-                sqlQuery = sqlProblemService.solveQuestion2();
-            }
+            String regNo = config.getUser().getRegNo();
+            String sqlQuery = getQueryForRegistration(regNo);
 
-            submitSolution(webhookUrl, sqlQuery);
+            apiClient.submitSolution(response.getAccessToken(), sqlQuery);
+            logger.info("Challenge completed successfully!");
 
         } catch (Exception e) {
-            log.error("Error processing webhook", e);
+            logger.error("Challenge execution failed: {}", e.getMessage(), e);
         }
     }
 
-    private Map<String, String> generateWebhook(String regNo) {
-        String url = "https://bfhldevapigw.healthrx.co.in/hiring/generateWebhook/JAVA";
-
-        Map<String, String> requestBody = new HashMap<>();
-        requestBody.put("name", "Punit Punde");
-        requestBody.put("regNo", regNo);
-        requestBody.put("email", "punitpunde@gmail.com");
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
-        log.info("Generating webhook for registration number {}", regNo);
-
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
-
-        if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-            Map<String, Object> responseBody = response.getBody();
-            String webhookUrl = (String) responseBody.get("webhook");
-            String accessToken = (String) responseBody.get("accessToken");
-
-            System.setProperty("accessToken", accessToken);
-            log.info("Webhook generated successfully: {}", webhookUrl);
-
-            Map<String, String> webhookData = new HashMap<>();
-            webhookData.put("webhookUrl", webhookUrl);
-            return webhookData;
+    private String getQueryForRegistration(String regNo) {
+        if (isRegNoEven(regNo)) {
+            logger.info("Registration number's last two digits are EVEN. Fetching Query 2.");
+            return sqlProblemService.solveQuestion2();
         } else {
-            throw new RuntimeException("Failed to generate webhook: " + response.getStatusCode());
+            logger.info("Registration number's last two digits are ODD. Fetching Query 1.");
+            return sqlProblemService.solveQuestion1();
         }
     }
 
-    private void submitSolution(String webhookUrl, String sqlQuery) {
-        String url = webhookUrl;
+    /**
+     * Checks if the last two digits of the registration number form an even number.
+     * This logic adheres to the specific requirement from the challenge description.
+     *
+     * @param regNo The registration number string.
+     * @return true if the last two digits form an even number, false otherwise.
+     */
+    private boolean isRegNoEven(String regNo) {
+        if (regNo == null || regNo.length() < 2) {
+            return false;
+        }
 
-        Map<String, String> requestBody = new HashMap<>();
-        requestBody.put("finalQuery", sqlQuery);
+        // Extract the substring of the last two characters
+        String lastTwoChars = regNo.substring(regNo.length() - 2);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", System.getProperty("accessToken"));
-
-        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
-        log.info("Submitting solution to: {}", url);
-
-        ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
-        log.info("Solution submitted. Response: {}", response.getBody());
+        try {
+            // Parse the substring into an integer
+            int lastTwoDigits = Integer.parseInt(lastTwoChars);
+            return lastTwoDigits % 2 == 0;
+        } catch (NumberFormatException e) {
+            // If the last two characters are not digits, it cannot be even/odd.
+            logger.warn("Could not parse the last two digits of the registration number: {}", regNo);
+            return false;
+        }
     }
 }
+
