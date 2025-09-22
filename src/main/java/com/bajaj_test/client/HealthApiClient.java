@@ -12,6 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.Map;
+
 @Component
 public class HealthApiClient {
     private static final Logger logger = LoggerFactory.getLogger(HealthApiClient.class);
@@ -29,23 +31,25 @@ public class HealthApiClient {
         return restTemplate.postForObject(url, payload, WebhookResponse.class);
     }
 
-    public void submitSolution(String accessToken, String sqlQuery) {
+    public void submitSolution(String accessToken, String finalQuery) {
         String url = config.getApi().getBaseUrl() + config.getApi().getSubmitSolutionPath();
         logger.info("Submitting solution to URL: {}", url);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken); // sets Authorization: Bearer <token>
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        SolutionRequest solution = new SolutionRequest(sqlQuery);
-        HttpEntity<SolutionRequest> request = new HttpEntity<>(solution, headers);
-
         try {
-            String response = restTemplate.postForObject(url, request, String.class);
-            logger.info("Submission response: {}", response);
+            HttpHeaders headers = new HttpHeaders();
+            // FIX: Added "Bearer " prefix for proper JWT authentication.
+            headers.set("Authorization", "Bearer " + accessToken);
+            headers.set("Content-Type", "application/json");
+
+            SolutionRequest solutionRequest = new SolutionRequest(finalQuery);
+            HttpEntity<SolutionRequest> entity = new HttpEntity<>(solutionRequest, headers);
+
+            restTemplate.postForObject(url, entity, Map.class);
+            logger.info("Solution submitted successfully.");
+
         } catch (Exception e) {
             logger.error("Failed to submit solution: {}", e.getMessage(), e);
-            throw e; // optionally rethrow or handle
+            throw e; // Re-throw to be caught by the main service
         }
     }
 
