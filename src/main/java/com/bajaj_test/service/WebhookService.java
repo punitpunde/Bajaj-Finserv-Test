@@ -4,8 +4,6 @@ import com.bajaj_test.client.HealthApiClient;
 import com.bajaj_test.config.AppConfigProperties;
 import com.bajaj_test.dto.WebhookRequest;
 import com.bajaj_test.dto.WebhookResponse;
-import com.bajaj_test.repository.EmployeeRepository;
-import com.bajaj_test.repository.PaymentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,7 +33,7 @@ public class WebhookService {
             String regNo = config.getUser().getRegNo();
             String sqlQuery = getQueryForRegistration(regNo);
 
-            apiClient.submitSolution(response.getAccessToken(), sqlQuery);
+            apiClient.submitSolution(response.getWebhook(),response.getAccessToken(), sqlQuery);
             logger.info("Challenge completed successfully!");
 
         } catch (Exception e) {

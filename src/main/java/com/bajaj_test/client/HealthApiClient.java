@@ -9,9 +9,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @Component
@@ -28,29 +30,39 @@ public class HealthApiClient {
     public WebhookResponse generateWebhook(WebhookRequest payload) {
         String url = config.getApi().getBaseUrl() + config.getApi().getGenerateWebhookPath();
         logger.info("Generating webhook at URL: {}", url);
-        return restTemplate.postForObject(url, payload, WebhookResponse.class);
+        logger.debug("Webhook request payload: {}", payload);
+
+        WebhookResponse response = restTemplate.postForObject(url, payload, WebhookResponse.class);
+
+        if (response != null) {
+            logger.info("Webhook generated successfully. Response: {}", response);
+        } else {
+            logger.warn("Webhook generation returned null response.");
+        }
+        return response;
     }
 
-    public void submitSolution(String accessToken, String finalQuery) {
-        String url = config.getApi().getBaseUrl() + config.getApi().getSubmitSolutionPath();
+    public void submitSolution(String webhookUrl, String accessToken, String finalQuery) {
+        String url = webhookUrl;
         logger.info("Submitting solution to URL: {}", url);
+        logger.debug("Final query: {}", finalQuery);
+
+        Map<String, String> requestBody = new HashMap<>();
+        requestBody.put("finalQuery", finalQuery);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", accessToken);
+
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
 
         try {
-            HttpHeaders headers = new HttpHeaders();
-            // FIX: Added "Bearer " prefix for proper JWT authentication.
-            headers.set("Authorization", "Bearer " + accessToken);
-            headers.set("Content-Type", "application/json");
-
-            SolutionRequest solutionRequest = new SolutionRequest(finalQuery);
-            HttpEntity<SolutionRequest> entity = new HttpEntity<>(solutionRequest, headers);
-
-            restTemplate.postForObject(url, entity, Map.class);
-            logger.info("Solution submitted successfully.");
-
+            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+            logger.info("Solution submitted. Response status: {}", response.getStatusCode());
+            logger.debug("Response body: {}", response.getBody());
         } catch (Exception e) {
-            logger.error("Failed to submit solution: {}", e.getMessage(), e);
-            throw e; // Re-throw to be caught by the main service
+            logger.error("Error submitting solution to URL: {}", url, e);
+            throw e;
         }
     }
-
 }
